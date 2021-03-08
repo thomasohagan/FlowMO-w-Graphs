@@ -16,7 +16,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from pysmiles import read_smiles
 
-from GP.kernels import Shortest_Path
+from GP.kernels import Shortest_Path, GraphDiffusionKernel
 from property_prediction.data_utils import TaskDataLoader
 
 
@@ -74,6 +74,7 @@ def main(path, task, n_trials, test_set_size, use_rmse_conf):
             y_test = y_test.reshape(-1, 1)
 
 
+            ### Training Data
             # Convert SMILES of training data to graphs
             graphs_train = [read_smiles(smiles) for smiles in X_train]
             # Convert graphs to adjacency matrices
@@ -84,28 +85,38 @@ def main(path, task, n_trials, test_set_size, use_rmse_conf):
                 diff = 55 - size
                 X_train[i] = np.pad(X_train[i], [(0,diff), (0,diff)], mode='constant', constant_values=0)
 
-            X_train = np.concatenate(X_train)
+            #X_train = np.concatenate(X_train)
             X_train = np.asarray(X_train)
             X_train = X_train.astype(np.float64)
 
 
+            ### Testing Data
             graphs_test = [read_smiles(smiles) for smiles in X_test]
             X_test = [nx.to_numpy_array(graph) for graph in graphs_test]
             for i in range(len(X_test)):
                 size = X_test[i].shape[0]
                 diff = 55 - size
                 X_test[i] = np.pad(X_test[i], [(0, diff), (0, diff)], mode='constant', constant_values=0)
-            X_test = np.concatenate(X_test)
+            #X_test = np.concatenate(X_test)
             X_test = np.asarray(X_test)
             X_test = X_test.astype(np.float64)
 
             k = Shortest_Path()
+            print((X_train.shape))
+            print(y_train.shape)
             m = gpflow.models.GPR(data=(X_train, y_train), mean_function=Constant(np.mean(y_train)), kernel=k, noise_variance=1)
+
 
             # Optimise the kernel variance and noise level by the marginal likelihood
 
-            opt = gpflow.optimizers.Scipy()
-            opt.minimize(objective_closure, m.trainable_variables, options=dict(maxiter=100))
+            optimizer = tf.optimizers.Adam(learning_rate=0.1)
+            print_summary(m)
+            with tf.GradientTape(watch_accessed_variables=False) as tape:
+                tape.watch(m.trainable_variables)
+                ll = m.maximum_log_likelihood_objective()
+                objective = -ll
+                gradients = tape.gradient(objective, m.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, m.trainable_variables))
             print_summary(m)
 
             # mean and variance GP prediction
