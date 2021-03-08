@@ -8,9 +8,10 @@ from gpflow.utilities import positive
 from gpflow.utilities.ops import broadcasting_elementwise
 import tensorflow as tf
 import networkx as nx
+import numpy as np
 from tensorflow_probability import bijectors as tfb
 
-
+from property_prediction.utils import tf_jitchol
 
 class Shortest_Path(gpflow.kernels.Kernel):
     def __init__(self):
@@ -21,45 +22,46 @@ class Shortest_Path(gpflow.kernels.Kernel):
 
         if X2 is None:
             X2 = X
-        kernel = tf.zeros([len(X), len(X2)], dtype=tf.dtypes.float64)
 
-        # Building adj matrices back up after concat
+          #Building adj matrices back up after concat
         #X_new = []
+        #print(type(X))
         #for j in range(902):
-         #   X = [X[i] for i in range(55 * j, 55 * j + 55)]
-          #  t = np.stack(X)
-           # X_new.append(t)
-        #X = X_new
+          #  single_adj = [X[i] for i in range(55 * j, 55 * j + 55)]
+          #  print(single_adj)
+         #   m = np.stack(single_adj)
+          #  X_new.append(m)
+        #t = X_new
 
-        t = []
+        #t = []
+        # Build adjacency matrices back up after concatenation
+        #for i in range(55):
+           # X_new = []
+           # for j in range(55):
+           #     m = tf.slice(X, [j, 0], [1, 55])
+             #   X_new.append(m)
+             #List of adj matrices
+           # t.append(tf.stack(X_new))
 
-        for i in range(55):
-            X_new = []
-            for j in range(55):
-                test = tf.slice(X, [j, 0], [1, 55])
-                X_new.append(test)
-
-            t.append(tf.stack(X_new))
-
-        print("t=", t)
-
+        # Generating list of graphs from adjacency matrices
         G = []
-        for matrix in t:
+        for matrix in X:
             print("matrix =", matrix)
-            G.append(nx.from_numpy_array(matrix))
+            #matrix = matrix.numpy().squeeze(axis=1)
+            G.append(nx.from_numpy_array(matrix.numpy()))
 
-        G2 = []
-        for matrix2 in t:
-            G2.append(nx.from_numpy_array((matrix2)))
 
+        # Calculating kernel matrix from graphs using wiener indices.
+        kernel = np.zeros([len(G), len(G)], dtype=np.float64)
         for i in range(len(G)):
-            for j in range(len(G2)):
-                 k_ij = nx.wiener_index(G[i]) * nx.wiener_index(G2[j])
-                 kernel.write([i, j], k_ij)
+            for j in range(len(G)):
+                 kernel[i,j] = nx.wiener_index(G[i]) * nx.wiener_index(G[j])
+                 #kernel.write([i, j], k_ij)
+
+        kernel = tf.convert_to_tensor(kernel)
 
         return self.variance * kernel
 
-    # Still have to update this section
     def K_diag(self, X):
 
         return tf.fill(tf.shape(X)[:-1], tf.squeeze(self.variance))
