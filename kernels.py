@@ -10,8 +10,12 @@ import tensorflow as tf
 import networkx as nx
 import numpy as np
 from tensorflow_probability import bijectors as tfb
+from pysmiles import read_smiles
 
 from property_prediction.utils import tf_jitchol
+
+
+
 
 class Shortest_Path(gpflow.kernels.Kernel):
     def __init__(self):
@@ -22,7 +26,7 @@ class Shortest_Path(gpflow.kernels.Kernel):
 
         if X2 is None:
             X2 = X
-
+#############################
           #Building adj matrices back up after concat
         #X_new = []
         #print(type(X))
@@ -42,20 +46,39 @@ class Shortest_Path(gpflow.kernels.Kernel):
              #   X_new.append(m)
              #List of adj matrices
            # t.append(tf.stack(X_new))
-
+#####################################
         # Generating list of graphs from adjacency matrices
-        G = []
-        for matrix in X:
-            print("matrix =", matrix)
-            #matrix = matrix.numpy().squeeze(axis=1)
-            G.append(nx.from_numpy_array(matrix.numpy()))
+
+        print("type is ", str(type(X2[1])))
+
+        G1 = []
+        if str(type(X[1])) == "<class 'numpy.ndarray'>":
+            for matrix in X:
+                G1.append(nx.from_numpy_array(matrix))
+        else:
+            for matrix in X:
+                G1.append(nx.from_numpy_array(matrix.numpy()))
+
+
+        if X2 is None:
+            G2 = G1
+
+        else:
+            G2 = []
+            if str(type(X2[1])) == "<class 'numpy.ndarray'>":
+                for matrix2 in X2:
+                    G2.append(nx.from_numpy_array(matrix2))
+
+            else:
+                for matrix2 in X2:
+                    G2.append(nx.from_numpy_array(matrix2.numpy()))
 
 
         # Calculating kernel matrix from graphs using wiener indices.
-        kernel = np.zeros([len(G), len(G)], dtype=np.float64)
-        for i in range(len(G)):
-            for j in range(len(G)):
-                 kernel[i,j] = nx.wiener_index(G[i]) * nx.wiener_index(G[j])
+        kernel = np.zeros([len(G1), len(G2)], dtype=np.float64)
+        for i in range(len(G1)):
+            for j in range(len(G2)):
+                 kernel[i,j] = nx.wiener_index(G1[i]) * nx.wiener_index(G2[j])
                  #kernel.write([i, j], k_ij)
 
         kernel = tf.convert_to_tensor(kernel)
@@ -63,8 +86,8 @@ class Shortest_Path(gpflow.kernels.Kernel):
         return self.variance * kernel
 
     def K_diag(self, X):
-
-        return tf.fill(tf.shape(X)[:-1], tf.squeeze(self.variance))
+        ##fix by using tf.shape and just taking first number from output brackets
+        return tf.fill((113), tf.squeeze(self.variance))
 
 class Tanimoto(gpflow.kernels.Kernel):
     def __init__(self):
@@ -98,7 +121,7 @@ class Tanimoto(gpflow.kernels.Kernel):
         :param X: N x D array
         :return: N x 1 array
         """
-        return tf.fill(tf.shape(X)[:-1], tf.squeeze(self.variance))
+        return tf.fill((tf.shape(X)[:-1]), tf.squeeze(self.variance))
 
 
 class SSK(gpflow.kernels.Kernel):

@@ -8,7 +8,7 @@ import argparse
 import tensorflow as tf
 import networkx as nx
 import gpflow
-from gpflow.mean_functions import Constant
+from gpflow.mean_functions import Constant, MeanFunction
 from gpflow.utilities import print_summary
 from matplotlib import pyplot as plt
 import numpy as np
@@ -16,8 +16,25 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from pysmiles import read_smiles
 
-from GP.kernels import Shortest_Path, GraphDiffusionKernel
+from GP.kernels import Shortest_Path
 from property_prediction.data_utils import TaskDataLoader
+
+from gpflow.base import Parameter
+from gpflow.config import default_int
+
+class Graph(MeanFunction):
+    def __init__(self, c=None):
+        super().__init__()
+        c = np.zeros(1) if c is None else c
+        self.c = Parameter(c)
+
+    def __call__(self, X):
+        # try tf.squeeze instead of tf.shape. just use tf.shape and take the first number(s) from brackets
+        tile_shape = tf.concat([tf.shape(X)[:-1], [1]], axis=0,)
+        reshape_shape = tf.concat(
+            [tf.ones(shape=1, dtype=default_int()), [-1]], axis=0,
+        )
+        return tf.tile(tf.reshape(self.c, reshape_shape), (902,1))
 
 
 def main(path, task, n_trials, test_set_size, use_rmse_conf):
@@ -77,6 +94,9 @@ def main(path, task, n_trials, test_set_size, use_rmse_conf):
             ### Training Data
             # Convert SMILES of training data to graphs
             graphs_train = [read_smiles(smiles) for smiles in X_train]
+
+            print("wiener", nx.wiener_index(graphs_train[4]) ** 2)
+
             # Convert graphs to adjacency matrices
             X_train = [nx.to_numpy_array(graph) for graph in graphs_train]
             # Pads all matrices to 55 x 55
@@ -84,6 +104,10 @@ def main(path, task, n_trials, test_set_size, use_rmse_conf):
                 size = X_train[i].shape[0]
                 diff = 55 - size
                 X_train[i] = np.pad(X_train[i], [(0,diff), (0,diff)], mode='constant', constant_values=0)
+
+            ren = nx.from_numpy_array(X_train[4])
+            test = nx.wiener_index(ren) ** 2
+            print("wiener2", test)
 
             #X_train = np.concatenate(X_train)
             X_train = np.asarray(X_train)
@@ -101,16 +125,16 @@ def main(path, task, n_trials, test_set_size, use_rmse_conf):
             X_test = np.asarray(X_test)
             X_test = X_test.astype(np.float64)
 
+
             k = Shortest_Path()
-            print((X_train.shape))
-            print(y_train.shape)
-            m = gpflow.models.GPR(data=(X_train, y_train), mean_function=Constant(np.mean(y_train)), kernel=k, noise_variance=1)
+            m = gpflow.models.GPR(data=(X_train, y_train), mean_function=Graph(np.mean(y_train)), kernel=k, noise_variance=1)
 
 
             # Optimise the kernel variance and noise level by the marginal likelihood
 
             optimizer = tf.optimizers.Adam(learning_rate=0.1)
             print_summary(m)
+
             with tf.GradientTape(watch_accessed_variables=False) as tape:
                 tape.watch(m.trainable_variables)
                 ll = m.maximum_log_likelihood_objective()
